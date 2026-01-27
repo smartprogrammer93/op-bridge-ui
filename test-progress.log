@@ -7,3 +7,19 @@ Tue Jan 27 22:01:05 +03 2026: Checking test wallet balance...
   L2 Balance (hex): 0x0
   ⏳ Waiting for funding. Send Sepolia ETH to: 0xdb25B53da39f6661B1a6FFE2f664e9D3E2325364
 ---
+
+=== INTEGRATION TESTS COMPLETE ===
+Tue Jan 27 22:06:29 +03 2026
+
+✅ DEPOSIT TEST (L1 -> L2)
+   TX: 0x0992b75a987bd0fd1545de2d8067bda6a967c4c5c3c577ec6c598ab1934f96a8
+   Block: 10136331 (Sepolia)
+   Amount: 0.001 ETH
+   
+✅ WITHDRAWAL TEST (L2 -> L1)
+   TX: 0x2816e372c6a68e1891b3bebbbef7a23afcbf3752157c63641e1aefe1f969209d
+   Block: 38869117 (OP Sepolia)
+   Amount: 0.0005 ETH
+
+Bridge UI is fully functional!
+
