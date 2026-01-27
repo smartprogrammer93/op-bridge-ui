@@ -1,52 +1,59 @@
-# Claude Code Instructions
+# OP Stack Bridge UI
 
-## Project: OP Stack Bridge UI
+A web interface for bridging ETH between Ethereum L1 and OP Stack L2 chains.
 
-This is a Next.js bridge UI for an OP Stack L2 blockchain.
+## Tech Stack
 
-## How to Work
+- **Next.js 16** + React 19 (App Router)
+- **RainbowKit + wagmi** for wallet connection
+- **viem** with OP Stack extensions
+- **Tailwind CSS 4** + shadcn/ui components
 
-1. **Read `DEVELOPMENT_PLAN.md` first** - It contains the complete spec and all code
-2. **Execute tasks in order** - Phase 1 → Phase 2 → ... → Phase 7
-3. **Test after each phase** - Run `pnpm dev` to verify the app compiles
-4. **Don't modify the plan** - Follow it exactly unless there's an error
+## Key Features
 
-## Key Files
+- **Deposit** ETH from L1 (Sepolia) → L2 (OP Sepolia)
+- **Withdraw** ETH from L2 → L1 (3-step process with fault proofs)
+- **Track** transaction history in real-time
 
-- `DEVELOPMENT_PLAN.md` - Complete development spec with all code
-- `src/config/contracts.ts` - **REQUIRES** L1 contract addresses from deployment
-- `src/config/chains.ts` - **REQUIRES** L2 chain configuration
-- `.env.local` - **REQUIRES** environment variables
+## Project Structure
+
+```
+src/
+├── app/           # Next.js pages (deposit, withdraw, transactions)
+├── components/    # UI & bridge components
+├── config/        # Chain, contract, wagmi configuration
+├── hooks/         # Bridge logic (useDeposit, useWithdraw, useProve...)
+├── lib/           # Utilities
+└── providers/     # Web3Provider wrapper
+```
 
 ## Commands
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Run dev server
-pnpm dev
-
-# Build for production
-pnpm build
-
-# Run production build
-pnpm start
+pnpm install     # Install dependencies
+pnpm dev         # Run dev server (localhost:3000)
+pnpm build       # Production build
+pnpm start       # Start production server
 ```
 
-## Critical Notes
+## Networks
 
-1. **L2 Predeploy addresses are FIXED** - Don't change them
-2. **L1 addresses must come from deployment** - Placeholder `0x...` values must be replaced
-3. **WalletConnect Project ID required** - Get from cloud.walletconnect.com
-4. **Test on Sepolia first** - Don't deploy to mainnet without testing
+- **L1**: Sepolia testnet
+- **L2**: OP Sepolia testnet
 
-## After Setup
+## Key Files
 
-The user will provide:
-- L1 contract addresses
-- L2 chain ID
-- L2 RPC URL
-- WalletConnect Project ID
+- `src/config/contracts.ts` - Bridge contract addresses
+- `src/config/chains.ts` - Chain definitions
+- `src/hooks/useDeposit.ts` - L1→L2 deposit logic
+- `src/hooks/useProveWithdrawal.ts` - Fault proof withdrawal proving
+- `src/hooks/useFinalizeWithdrawal.ts` - Withdrawal finalization
+- `src/components/bridge/WithdrawalItem.tsx` - Withdrawal status & actions
 
-Wait for these before finalizing configuration.
+## Withdrawal Flow (Fault Proofs)
+
+1. **Initiate** on L2 - User starts withdrawal
+2. **Wait ~1hr** - DisputeGameFactory creates game covering the L2 block
+3. **Prove** on L1 - Submit proof with dispute game index
+4. **Wait 7 days** - Challenge period
+5. **Finalize** on L1 - Claim ETH
