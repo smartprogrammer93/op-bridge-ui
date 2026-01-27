@@ -1,14 +1,13 @@
 import { defineChain } from 'viem';
-import { mainnet, sepolia } from 'viem/chains';
+import { sepolia } from 'viem/chains';
 
-// L1 Chain (use mainnet or sepolia based on environment)
-export const l1Chain = sepolia; // Change to mainnet for production
+// L1 Chain - Sepolia Testnet
+export const l1Chain = sepolia;
 
-// L2 Chain - Custom OP Stack chain
-// TODO: Replace with your actual L2 chain configuration
+// L2 Chain - OP Sepolia
 export const l2Chain = defineChain({
-  id: 42069, // Replace with your L2 chain ID
-  name: 'Your L2 Chain',
+  id: 11155420,
+  name: 'OP Sepolia',
   nativeCurrency: {
     name: 'Ether',
     symbol: 'ETH',
@@ -16,20 +15,20 @@ export const l2Chain = defineChain({
   },
   rpcUrls: {
     default: {
-      http: ['https://your-l2-rpc.example.com'],
+      http: ['https://sepolia.optimism.io'],
     },
     public: {
-      http: ['https://your-l2-rpc.example.com'],
+      http: ['https://sepolia.optimism.io'],
     },
   },
   blockExplorers: {
     default: {
-      name: 'Explorer',
-      url: 'https://your-explorer.example.com',
+      name: 'Etherscan',
+      url: 'https://sepolia-optimism.etherscan.io',
     },
   },
   contracts: {
-    // OP Stack predeploys
+    // OP Stack predeploys (same for all OP Stack chains)
     l2CrossDomainMessenger: {
       address: '0x4200000000000000000000000000000000000007',
     },
@@ -40,6 +39,7 @@ export const l2Chain = defineChain({
       address: '0x4200000000000000000000000000000000000016',
     },
   },
+  testnet: true,
 });
 
 export const chains = [l1Chain, l2Chain] as const;

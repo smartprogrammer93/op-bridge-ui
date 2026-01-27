@@ -1,18 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { useAccount, useBalance } from 'wagmi';
+import { useAccount, useBalance, useSwitchChain } from 'wagmi';
 import { formatEther } from 'viem';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { AmountInput } from './AmountInput';
 import { useDepositETH } from '@/hooks/useDeposit';
 import { l1Chain, l2Chain } from '@/config/chains';
-import { ArrowDown, Loader2 } from 'lucide-react';
+import { ArrowDown, Loader2, Wallet } from 'lucide-react';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 export function DepositForm() {
   const [amount, setAmount] = useState('');
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chainId } = useAccount();
+  const { switchChain, isPending: isSwitching } = useSwitchChain();
+  
+  const isOnL1 = chainId === l1Chain.id;
   
   const { data: balance } = useBalance({
     address,
@@ -26,65 +28,168 @@ export function DepositForm() {
     await deposit(amount);
   };
 
-  return (
-    <Card className="w-full max-w-md mx-auto">
-      <CardHeader>
-        <CardTitle className="text-center">Deposit to L2</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {/* From Chain */}
-        <div className="p-4 bg-gray-900 rounded-lg space-y-3">
-          <div className="text-sm text-gray-400">From: {l1Chain.name}</div>
-          <AmountInput
-            value={amount}
-            onChange={setAmount}
-            balance={balance ? formatEther(balance.value) : undefined}
-            symbol="ETH"
-          />
-        </div>
+  const handleMax = () => {
+    if (balance) {
+      // Leave some for gas
+      const maxAmount = parseFloat(formatEther(balance.value)) - 0.01;
+      if (maxAmount > 0) {
+        setAmount(maxAmount.toFixed(6));
+      }
+    }
+  };
 
-        {/* Arrow */}
-        <div className="flex justify-center">
-          <div className="p-2 bg-gray-800 rounded-full">
-            <ArrowDown className="h-5 w-5" />
+  return (
+    <div className="w-full max-w-lg mx-auto">
+      {/* Main Card */}
+      <div className="relative bg-[#12121a]/80 backdrop-blur-xl rounded-2xl border border-white/5 p-6 shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-semibold text-white">Bridge to L2</h2>
+          <div className="flex items-center gap-2">
+            <button className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
+              <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
           </div>
         </div>
 
-        {/* To Chain */}
-        <div className="p-4 bg-gray-900 rounded-lg">
-          <div className="text-sm text-gray-400">To: {l2Chain.name}</div>
-          <div className="text-lg mt-2">{amount || '0'} ETH</div>
+        {/* Chain Selector */}
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex-1 bg-[#1a1a24] rounded-xl p-3">
+            <div className="text-xs text-gray-500 mb-1">From</div>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center">
+                <span className="text-white text-xs font-bold">Ξ</span>
+              </div>
+              <span className="font-medium text-white">{l1Chain.name}</span>
+            </div>
+          </div>
+          
+          <div className="p-2 rounded-full bg-[#1a1a24]">
+            <ArrowDown className="w-4 h-4 text-violet-400" />
+          </div>
+          
+          <div className="flex-1 bg-[#1a1a24] rounded-xl p-3">
+            <div className="text-xs text-gray-500 mb-1">To</div>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center">
+                <span className="text-white text-xs font-bold">OP</span>
+              </div>
+              <span className="font-medium text-white">{l2Chain.name}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Amount Input */}
+        <div className="bg-[#1a1a24] rounded-xl p-4 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-gray-500">You send</span>
+            {balance && (
+              <span className="text-sm text-gray-500">
+                Balance: {parseFloat(formatEther(balance.value)).toFixed(4)} ETH
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0"
+              className="flex-1 bg-transparent text-3xl font-light text-white outline-none"
+            />
+            <div className="flex items-center gap-2">
+              {balance && (
+                <button
+                  onClick={handleMax}
+                  className="px-2 py-1 text-xs font-medium text-violet-400 hover:text-violet-300 bg-violet-500/10 rounded-md transition-colors"
+                >
+                  Max
+                </button>
+              )}
+              <div className="flex items-center gap-2 px-3 py-2 bg-white/5 rounded-lg">
+                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center">
+                  <span className="text-white text-xs font-bold">Ξ</span>
+                </div>
+                <span className="font-medium text-white">ETH</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* You Receive */}
+        <div className="bg-[#1a1a24] rounded-xl p-4 mb-6">
+          <div className="text-sm text-gray-500 mb-2">You receive</div>
+          <div className="flex items-center gap-3">
+            <span className="text-2xl font-light text-white">{amount || '0'}</span>
+            <span className="text-gray-400">ETH on {l2Chain.name}</span>
+          </div>
         </div>
 
         {/* Status Messages */}
         {isSuccess && (
-          <div className="p-3 bg-green-900/50 border border-green-700 rounded-lg text-sm">
-            ✅ Deposit submitted! Tx: {hash?.slice(0, 10)}...
+          <div className="mb-4 p-4 bg-green-500/10 border border-green-500/20 rounded-xl">
+            <div className="flex items-center gap-2 text-green-400">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <span className="font-medium">Deposit submitted!</span>
+            </div>
+            <p className="text-sm text-green-400/70 mt-1">
+              Tx: {hash?.slice(0, 10)}...{hash?.slice(-8)}
+            </p>
           </div>
         )}
+        
         {error && (
-          <div className="p-3 bg-red-900/50 border border-red-700 rounded-lg text-sm">
-            ❌ Error: {error.message}
+          <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
+            <p className="text-sm text-red-400">{error.message}</p>
           </div>
         )}
 
-        {/* Submit Button */}
-        <Button
-          onClick={handleDeposit}
-          disabled={!isConnected || !amount || isPending || isConfirming}
-          className="w-full"
-          size="lg"
-        >
-          {isPending || isConfirming ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              {isPending ? 'Confirm in Wallet...' : 'Confirming...'}
-            </>
-          ) : (
-            'Deposit'
-          )}
-        </Button>
-      </CardContent>
-    </Card>
+        {/* Action Button */}
+        {!isConnected ? (
+          <ConnectButton.Custom>
+            {({ openConnectModal }) => (
+              <button
+                onClick={openConnectModal}
+                className="w-full py-4 bg-violet-500 hover:bg-violet-600 text-white font-medium rounded-xl transition-all shadow-lg shadow-violet-500/25 flex items-center justify-center gap-2"
+              >
+                <Wallet className="w-5 h-5" />
+                Connect Wallet
+              </button>
+            )}
+          </ConnectButton.Custom>
+        ) : !isOnL1 ? (
+          <Button
+            onClick={() => switchChain({ chainId: l1Chain.id })}
+            disabled={isSwitching}
+            className="w-full py-4 h-auto bg-violet-500 hover:bg-violet-600 text-white font-medium rounded-xl"
+          >
+            {isSwitching ? (
+              <><Loader2 className="w-5 h-5 animate-spin mr-2" /> Switching...</>
+            ) : (
+              `Switch to ${l1Chain.name}`
+            )}
+          </Button>
+        ) : (
+          <Button
+            onClick={handleDeposit}
+            disabled={!amount || parseFloat(amount) <= 0 || isPending || isConfirming}
+            className="w-full py-4 h-auto bg-violet-500 hover:bg-violet-600 disabled:bg-gray-700 disabled:text-gray-400 text-white font-medium rounded-xl transition-all"
+          >
+            {isPending || isConfirming ? (
+              <><Loader2 className="w-5 h-5 animate-spin mr-2" /> {isPending ? 'Confirm in Wallet...' : 'Processing...'}</>
+            ) : !amount || parseFloat(amount) <= 0 ? (
+              'Enter amount'
+            ) : (
+              'Deposit'
+            )}
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
