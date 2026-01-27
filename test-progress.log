@@ -1,0 +1,9 @@
+=== OP Bridge Integration Test Log ===
+Test Wallet: 0xdb25B53da39f6661B1a6FFE2f664e9D3E2325364
+Started: Tue Jan 27 22:01:05 +03 2026
+---
+Tue Jan 27 22:01:05 +03 2026: Checking test wallet balance...
+  L1 Balance (hex): 0x0
+  L2 Balance (hex): 0x0
+  ⏳ Waiting for funding. Send Sepolia ETH to: 0xdb25B53da39f6661B1a6FFE2f664e9D3E2325364
+---
