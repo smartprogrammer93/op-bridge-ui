@@ -11,7 +11,7 @@ import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 // Constants
 const MIN_DEPOSIT_ETH = 0.0001;
-const GAS_RESERVE_ETH = 0.01;
+const GAS_RESERVE_ETH = 0.005; // Reserve for L1 gas
 
 // Sanitize input to only allow valid number characters
 function sanitizeAmountInput(value: string): string {
@@ -54,10 +54,12 @@ function validateAmount(
 
   if (balanceValue !== undefined) {
     const balanceEth = parseFloat(formatEther(balanceValue));
-    if (parsed > balanceEth) {
+    // Use small epsilon for floating point comparison
+    const epsilon = 0.000001;
+    if (parsed > balanceEth + epsilon) {
       return 'Insufficient balance';
     }
-    if (parsed > balanceEth - GAS_RESERVE_ETH) {
+    if (parsed > balanceEth - GAS_RESERVE_ETH + epsilon) {
       return 'Leave some ETH for gas fees';
     }
   }
