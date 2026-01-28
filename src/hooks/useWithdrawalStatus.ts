@@ -123,7 +123,9 @@ export function useWithdrawalStatus(l2TxHash?: Hash) {
       setStatus('waiting-for-proof');
       
     } catch (err) {
-      console.error('Failed to check withdrawal status:', err);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Failed to check withdrawal status:', err);
+      }
       setError(err instanceof Error ? err.message : 'Failed to check status');
     } finally {
       setIsLoading(false);

@@ -1,8 +1,14 @@
 import { useAccount, usePublicClient } from 'wagmi';
-import { useEffect, useState, useCallback } from 'react';
-import { formatEther, parseAbiItem } from 'viem';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { formatEther, parseAbiItem, PublicClient } from 'viem';
 import { l1Chain, l2Chain } from '@/config/chains';
 import { bridgeContracts } from '@/config/contracts';
+import { 
+  TRANSACTION_HISTORY_BLOCKS, 
+  TRANSACTION_CHUNK_SIZE,
+  QUERY_STALE_TIME,
+  QUERY_CACHE_TIME,
+} from '@/config/constants';
 
 export interface BridgeTransaction {
   type: 'deposit' | 'withdrawal';
@@ -28,12 +34,12 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Fetch logs with rate limit handling and pagination
 async function fetchLogsWithPagination(
-  client: any,
+  client: PublicClient,
   address: `0x${string}`,
   event: any,
   args: any,
-  totalBlocks: number = 30000,
-  chunkSize: number = 2000
+  totalBlocks: number = TRANSACTION_HISTORY_BLOCKS,
+  chunkSize: number = TRANSACTION_CHUNK_SIZE
 ): Promise<any[]> {
   const currentBlock = await client.getBlockNumber();
   const allLogs: any[] = [];
@@ -87,87 +93,82 @@ async function fetchLogsWithPagination(
   return allLogs;
 }
 
+// Fetch function for React Query
+async function fetchBridgeTransactions(
+  address: `0x${string}`,
+  l1Client: PublicClient,
+  l2Client: PublicClient
+): Promise<{ deposits: BridgeTransaction[]; withdrawals: BridgeTransaction[] }> {
+  const [depositLogs, withdrawalLogs] = await Promise.all([
+    fetchLogsWithPagination(
+      l1Client,
+      bridgeContracts.l1.l1StandardBridge,
+      ETH_BRIDGE_INITIATED,
+      { from: address }
+    ),
+    fetchLogsWithPagination(
+      l2Client,
+      bridgeContracts.l2.l2StandardBridge,
+      ETH_WITHDRAWAL_INITIATED,
+      { from: address }
+    ),
+  ]);
+
+  const deposits: BridgeTransaction[] = depositLogs.map((log: any) => ({
+    type: 'deposit',
+    hash: log.transactionHash,
+    amount: formatEther(log.args.amount || BigInt(0)),
+    status: 'confirmed',
+    chain: 'l1',
+    blockNumber: log.blockNumber,
+  }));
+  
+  const withdrawals: BridgeTransaction[] = withdrawalLogs.map((log: any) => ({
+    type: 'withdrawal',
+    hash: log.transactionHash,
+    amount: formatEther(log.args.amount || BigInt(0)),
+    status: 'pending',
+    chain: 'l2',
+    blockNumber: log.blockNumber,
+  }));
+  
+  return { deposits, withdrawals };
+}
+
 export function useTransactions() {
   const { address } = useAccount();
   const l1Client = usePublicClient({ chainId: l1Chain.id });
   const l2Client = usePublicClient({ chainId: l2Chain.id });
-  
-  const [deposits, setDeposits] = useState<BridgeTransaction[]>([]);
-  const [withdrawals, setWithdrawals] = useState<BridgeTransaction[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
-  const fetchTransactions = useCallback(async () => {
-    if (!address || !l1Client || !l2Client) return;
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['bridgeTransactions', address],
+    queryFn: () => {
+      if (!address || !l1Client || !l2Client) {
+        return { deposits: [], withdrawals: [] };
+      }
+      return fetchBridgeTransactions(address, l1Client, l2Client);
+    },
+    enabled: !!address && !!l1Client && !!l2Client,
+    staleTime: QUERY_STALE_TIME,
+    gcTime: QUERY_CACHE_TIME,
+    retry: 2,
+    refetchOnWindowFocus: false,
+  });
 
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      // Fetch deposits and withdrawals in parallel
-      console.log('Fetching transactions...');
-      
-      const [depositLogs, withdrawalLogs] = await Promise.all([
-        fetchLogsWithPagination(
-          l1Client,
-          bridgeContracts.l1.l1StandardBridge,
-          ETH_BRIDGE_INITIATED,
-          { from: address },
-          30000,
-          2000
-        ),
-        fetchLogsWithPagination(
-          l2Client,
-          bridgeContracts.l2.l2StandardBridge,
-          ETH_WITHDRAWAL_INITIATED,
-          { from: address },
-          30000,
-          2000
-        ),
-      ]);
-
-      const depositTxs: BridgeTransaction[] = depositLogs.map((log: any) => ({
-        type: 'deposit',
-        hash: log.transactionHash,
-        amount: formatEther(log.args.amount || BigInt(0)),
-        status: 'confirmed',
-        chain: 'l1',
-        blockNumber: log.blockNumber,
-      }));
-      
-      const withdrawalTxs: BridgeTransaction[] = withdrawalLogs.map((log: any) => ({
-        type: 'withdrawal',
-        hash: log.transactionHash,
-        amount: formatEther(log.args.amount || BigInt(0)),
-        status: 'pending',
-        chain: 'l2',
-        blockNumber: log.blockNumber,
-      }));
-      
-      setDeposits(depositTxs);
-      setWithdrawals(withdrawalTxs);
-      console.log(`Found ${depositTxs.length} deposits, ${withdrawalTxs.length} withdrawals`);
-      
-    } catch (err) {
-      console.error('Failed to fetch transactions:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch transactions');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [address, l1Client, l2Client]);
-
-  useEffect(() => {
-    fetchTransactions();
-  }, [fetchTransactions]);
+  const deposits = data?.deposits ?? [];
+  const withdrawals = data?.withdrawals ?? [];
 
   return {
     deposits,
     withdrawals,
     isLoading,
-    error,
-    refetch: fetchTransactions,
+    error: error ? (error instanceof Error ? error.message : 'Failed to fetch transactions') : null,
+    refetch,
     allTransactions: [...deposits, ...withdrawals].sort(
       (a, b) => Number(b.blockNumber) - Number(a.blockNumber)
     ),
+    // Utility to invalidate cache after a new transaction
+    invalidateCache: () => queryClient.invalidateQueries({ queryKey: ['bridgeTransactions', address] }),
   };
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { usePublicClient, useAccount, useSwitchChain } from 'wagmi';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ExternalLink, Loader2, Clock, CheckCircle, AlertCircle } from 'lucide-react';
 import { l1Chain, l2Chain } from '@/config/chains';
 import { bridgeContracts } from '@/config/contracts';
@@ -142,7 +143,9 @@ export function WithdrawalItem({ tx }: WithdrawalItemProps) {
           setStatus('waiting-for-output');
         }
       } catch (err) {
-        console.error('Status check error:', err);
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Status check error:', err);
+        }
         setStatus('error');
         setErrorMsg(err instanceof Error ? err.message : 'Unknown error');
       }
@@ -254,8 +257,26 @@ export function WithdrawalItem({ tx }: WithdrawalItemProps) {
   const isConfirming = isProveConfirming || isFinalizeConfirming;
   const error = proveError || finalizeError;
 
+  // Skeleton loader for initial loading state
+  if (status === 'loading') {
+    return (
+      <div className="p-4 bg-[#1a1a24] rounded-xl space-y-3" aria-busy="true" aria-label="Loading withdrawal status">
+        <div className="flex items-center justify-between">
+          <div>
+            <Skeleton className="h-5 w-24 mb-2" />
+            <Skeleton className="h-3 w-32" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-6 w-20 rounded" />
+            <Skeleton className="h-4 w-4 rounded" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-4 bg-[#1a1a24] rounded-xl space-y-3">
+    <div className="p-4 bg-[#1a1a24] rounded-xl space-y-3" role="article" aria-label={`Withdrawal of ${tx.amount} ETH`}>
       <div className="flex items-center justify-between">
         <div>
           <div className="font-medium text-white">{tx.amount} ETH</div>
@@ -273,8 +294,9 @@ export function WithdrawalItem({ tx }: WithdrawalItemProps) {
                 variant="outline"
                 onClick={() => switchChain({ chainId: l1Chain.id })}
                 disabled={isSwitching}
+                aria-label={`Switch to ${l1Chain.name} network to ${status === 'ready-to-prove' ? 'prove' : 'finalize'} withdrawal`}
               >
-                {isSwitching ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Switch to L1'}
+                {isSwitching ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> : 'Switch to L1'}
               </Button>
             ) : (
               <Button
@@ -282,9 +304,11 @@ export function WithdrawalItem({ tx }: WithdrawalItemProps) {
                 variant={status === 'ready-to-finalize' ? 'default' : 'outline'}
                 onClick={status === 'ready-to-prove' ? handleProve : handleFinalize}
                 disabled={isPending || isConfirming}
+                aria-label={status === 'ready-to-prove' ? `Prove withdrawal of ${tx.amount} ETH` : `Finalize withdrawal of ${tx.amount} ETH`}
+                aria-busy={isPending || isConfirming}
               >
                 {isPending || isConfirming ? (
-                  <><Loader2 className="h-3 w-3 animate-spin mr-1" /> {isPending ? 'Confirm...' : 'Processing...'}</>
+                  <><Loader2 className="h-3 w-3 animate-spin mr-1" aria-hidden="true" /> {isPending ? 'Confirm...' : 'Processing...'}</>
                 ) : (
                   status === 'ready-to-prove' ? 'Prove' : 'Finalize'
                 )}
@@ -296,9 +320,10 @@ export function WithdrawalItem({ tx }: WithdrawalItemProps) {
             href={`${l2Chain.blockExplorers?.default.url}/tx/${tx.hash}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-400 hover:text-blue-300"
+            className="text-blue-400 hover:text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-[#1a1a24] rounded"
+            aria-label={`View transaction ${tx.hash.slice(0, 8)}... on block explorer`}
           >
-            <ExternalLink className="h-4 w-4" />
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
           </a>
         </div>
       </div>

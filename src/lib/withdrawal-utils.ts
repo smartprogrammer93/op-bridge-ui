@@ -105,7 +105,9 @@ export async function getWithdrawalFromTx(
     }
     return null;
   } catch (err) {
-    console.error('Failed to get withdrawal from tx:', err);
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Failed to get withdrawal from tx:', err);
+    }
     return null;
   }
 }

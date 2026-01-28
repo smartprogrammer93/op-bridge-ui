@@ -116,7 +116,9 @@ export function useProveWithdrawal() {
       
       return null;
     } catch (err) {
-      console.error('Failed to find dispute game:', err);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Failed to find dispute game:', err);
+      }
       return null;
     }
   }, [l1Client]);
