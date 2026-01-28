@@ -103,8 +103,8 @@ export function useProveWithdrawal() {
             });
             
             // Only use resolved games where defender won (status = 2)
-            // For OP Sepolia testnet, we might need to allow IN_PROGRESS games
-            if (Number(status) === 2 || Number(status) === 0) {
+            // IN_PROGRESS games (status 0) are not yet provable - L2 data may not be available
+            if (Number(status) === 2) {
               return { gameIndex: i, gameProxy: proxy, l2Block: gameL2BlockBigInt };
             }
           }
