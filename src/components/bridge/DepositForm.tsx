@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useAccount, useBalance, useSwitchChain } from 'wagmi';
 import { formatEther } from 'viem';
 import { Button } from '@/components/ui/button';
 import { useDepositETH } from '@/hooks/useDeposit';
+import { useRateLimit } from '@/hooks/useRateLimit';
+import { getUserFriendlyError, isUserRejection } from '@/lib/errors';
 import { l1Chain, l2Chain } from '@/config/chains';
 import { ArrowDown, Loader2, Wallet, AlertCircle } from 'lucide-react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
@@ -69,6 +71,7 @@ function validateAmount(
 
 export function DepositForm() {
   const [amount, setAmount] = useState('');
+  const [localError, setLocalError] = useState<string | null>(null);
   const { address, isConnected, chainId } = useAccount();
   const { switchChain, isPending: isSwitching } = useSwitchChain();
   
@@ -80,6 +83,9 @@ export function DepositForm() {
   });
 
   const { deposit, isPending, isConfirming, isSuccess, hash, error } = useDepositETH();
+  
+  // Rate limit to prevent spam (1 action per second, max 5 per minute)
+  const { canPerform, performAction } = useRateLimit({ minInterval: 1000, maxActions: 5, windowMs: 60000 });
 
   // Validate amount
   const validationError = useMemo(
@@ -92,16 +98,29 @@ export function DepositForm() {
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const sanitized = sanitizeAmountInput(e.target.value);
     setAmount(sanitized);
+    setLocalError(null); // Clear error on input change
   };
 
-  const handleDeposit = async () => {
+  const handleDeposit = useCallback(async () => {
     // Double-check validation before submitting
-    const error = validateAmount(amount, balance?.value);
-    if (error) {
+    const validationErr = validateAmount(amount, balance?.value);
+    if (validationErr) {
       return;
     }
-    await deposit(amount);
-  };
+    
+    setLocalError(null);
+    
+    await performAction(async () => {
+      try {
+        await deposit(amount);
+      } catch (err) {
+        if (!isUserRejection(err)) {
+          setLocalError(getUserFriendlyError(err));
+        }
+        throw err;
+      }
+    });
+  }, [amount, balance?.value, deposit, performAction]);
 
   const handleMax = () => {
     if (balance) {
@@ -234,9 +253,9 @@ export function DepositForm() {
           </div>
         )}
         
-        {error && (
+        {(error || localError) && !isUserRejection(error) && (
           <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
-            <p className="text-sm text-red-400">{error.message}</p>
+            <p className="text-sm text-red-400">{localError || getUserFriendlyError(error)}</p>
           </div>
         )}
 
@@ -268,11 +287,13 @@ export function DepositForm() {
         ) : (
           <Button
             onClick={handleDeposit}
-            disabled={!isValidAmount || isPending || isConfirming}
+            disabled={!isValidAmount || isPending || isConfirming || !canPerform}
             className="w-full py-4 h-auto bg-violet-500 hover:bg-violet-600 disabled:bg-gray-700 disabled:text-gray-400 text-white font-medium rounded-xl transition-all"
           >
             {isPending || isConfirming ? (
               <><Loader2 className="w-5 h-5 animate-spin mr-2" /> {isPending ? 'Confirm in Wallet...' : 'Processing...'}</>
+            ) : !canPerform ? (
+              'Please wait...'
             ) : !amount ? (
               'Enter amount'
             ) : validationError ? (

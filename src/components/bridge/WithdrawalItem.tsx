@@ -5,6 +5,7 @@ import { usePublicClient, useAccount, useSwitchChain } from 'wagmi';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ExternalLink, Loader2, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { getUserFriendlyError, isUserRejection } from '@/lib/errors';
 import { l1Chain, l2Chain } from '@/config/chains';
 import { bridgeContracts } from '@/config/contracts';
 import { OPTIMISM_PORTAL_ABI, WITHDRAWAL_PROVEN_EVENT } from '@/config/abis';
@@ -328,9 +329,9 @@ export function WithdrawalItem({ tx }: WithdrawalItemProps) {
         </div>
       </div>
       
-      {(error || errorMsg) && (
+      {(error || errorMsg) && !isUserRejection(error) && (
         <div className="text-xs text-red-400 bg-red-900/20 p-2 rounded">
-          {error?.message || errorMsg}
+          {errorMsg || getUserFriendlyError(error)}
         </div>
       )}
     </div>
