@@ -12,7 +12,7 @@
 |----------|-------------|-------|
 | 🔴 Critical | 3 | 2 ✅ |
 | 🟠 High | 6 | 6 ✅ |
-| 🟡 Medium | 8 | 0 |
+| 🟡 Medium | 8 | 8 ✅ |
 | 🔵 Low | 7 | 0 |
 
 ---
@@ -258,7 +258,7 @@ const result = GameAtIndexSchema.parse(rawResult);
 
 ## 🟡 Medium Severity Issues
 
-### 10. Hardcoded Magic Numbers
+### 10. ~~Hardcoded Magic Numbers~~ ✅ FIXED
 **Location:** Multiple files
 
 | Value | Location | Description |
@@ -281,7 +281,7 @@ export const DISPUTE_GAME_BATCH_SIZE = 50;
 
 ---
 
-### 11. Console.log in Production Code
+### 11. ~~Console.log in Production Code~~ ✅ FIXED
 **Location:** 
 - `src/components/bridge/WithdrawalItem.tsx:144,148,159`
 - `src/hooks/useTransactions.ts:92,109`
@@ -296,7 +296,7 @@ if (process.env.NODE_ENV === 'development') {
 
 ---
 
-### 12. Deprecated L2OutputOracle Reference
+### 12. ~~Deprecated L2OutputOracle Reference~~ ✅ FIXED
 **Location:** `src/config/contracts.ts:12`
 
 ```tsx
@@ -309,7 +309,7 @@ l2OutputOracle: '0x90E9c4f8a994a250F6aEfd61CAFb4F2e895D458F', // Deprecated!
 
 ---
 
-### 13. Missing Loading States
+### 13. ~~Missing Loading States~~ ✅ FIXED
 **Location:** `src/components/bridge/WithdrawalItem.tsx`
 
 The component shows "Checking..." but doesn't handle the initial render gracefully.
@@ -323,7 +323,7 @@ if (status === 'loading') {
 
 ---
 
-### 14. No Transaction Caching
+### 14. ~~No Transaction Caching~~ ✅ FIXED
 **Location:** `src/hooks/useTransactions.ts`
 
 **Impact:** Refetches all transactions on every component mount
@@ -340,7 +340,7 @@ const { data, isLoading } = useQuery({
 
 ---
 
-### 15. Missing Accessibility
+### 15. ~~Missing Accessibility~~ ✅ FIXED
 **Location:** Multiple components
 
 Issues:
@@ -363,7 +363,7 @@ Issues:
 
 ---
 
-### 16. Unused Import
+### 16. ~~Unused Import~~ ✅ FIXED
 **Location:** `src/hooks/useProveWithdrawal.ts:4`
 
 ```tsx
@@ -372,7 +372,7 @@ import { getWithdrawals } from 'viem/op-stack'; // Never used
 
 ---
 
-### 17. No Network Mismatch Handling
+### 17. ~~No Network Mismatch Handling~~ ✅ FIXED
 **Location:** All transaction components
 
 **Impact:** Confusing errors if user is on wrong network
