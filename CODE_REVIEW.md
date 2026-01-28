@@ -11,7 +11,7 @@
 | Category | Issues Found | Fixed |
 |----------|-------------|-------|
 | 🔴 Critical | 3 | 2 ✅ |
-| 🟠 High | 6 | 0 |
+| 🟠 High | 6 | 6 ✅ |
 | 🟡 Medium | 8 | 0 |
 | 🔵 Low | 7 | 0 |
 
@@ -116,7 +116,7 @@ if (!projectId || projectId === 'YOUR_PROJECT_ID') {
 
 ## 🟠 High Severity Issues
 
-### 4. Duplicate Code - getWithdrawalFromTx
+### 4. ~~Duplicate Code - getWithdrawalFromTx~~ ✅ FIXED
 **Location:** 
 - `src/hooks/useProveWithdrawal.ts:102-139`
 - `src/hooks/useFinalizeWithdrawal.ts:36-73`
@@ -133,7 +133,7 @@ export async function getWithdrawalFromTx(client, txHash) { ... }
 
 ---
 
-### 5. Duplicate ABI Definitions
+### 5. ~~Duplicate ABI Definitions~~ ✅ FIXED
 **Location:** 
 - `src/hooks/useProveWithdrawal.ts` (messagePassedAbi, optimismPortal2Abi)
 - `src/hooks/useFinalizeWithdrawal.ts` (messagePassedAbi, optimismPortalAbi)
@@ -150,7 +150,7 @@ export const OPTIMISM_PORTAL_ABI = [...];
 
 ---
 
-### 6. QueryClient Created Inside Component
+### 6. ~~QueryClient Created Inside Component~~ ✅ FIXED
 **Location:** `src/providers/Web3Provider.tsx:8`
 
 ```tsx
@@ -180,7 +180,7 @@ const queryClient = new QueryClient({
 
 ---
 
-### 7. Inefficient Log Fetching
+### 7. ~~Inefficient Log Fetching~~ ✅ FIXED
 **Location:** `src/components/bridge/WithdrawalItem.tsx:133-142`
 
 ```tsx
@@ -212,7 +212,7 @@ const logs = await l1Client.getLogs({
 
 ---
 
-### 8. No Retry Logic for RPC Failures
+### 8. ~~No Retry Logic for RPC Failures~~ ✅ FIXED
 **Location:** All hooks using contract reads
 
 **Impact:** User sees errors on transient network issues
@@ -234,7 +234,7 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
 
 ---
 
-### 9. Unsafe Type Assertions
+### 9. ~~Unsafe Type Assertions~~ ✅ FIXED
 **Location:** Multiple files
 
 ```tsx
