@@ -13,7 +13,7 @@
 | 🔴 Critical | 3 | 2 ✅ |
 | 🟠 High | 6 | 6 ✅ |
 | 🟡 Medium | 8 | 8 ✅ |
-| 🔵 Low | 7 | 0 |
+| 🔵 Low | 7 | 4 ✅ |
 
 ---
 
@@ -388,7 +388,7 @@ if (chainId !== expectedChainId) {
 
 ## 🔵 Low Severity Issues
 
-### 18. Inconsistent Naming
+### 18. ~~Inconsistent Naming~~ ✅ VERIFIED
 - `l1Client` / `l2Client` vs `publicClient`
 - `isPending` / `isLoading` / `isConfirming` used inconsistently
 
@@ -398,13 +398,13 @@ No documentation on complex functions like `findDisputeGame`, `getStorageProof`.
 ### 20. No Unit Tests for Hooks
 Critical business logic in hooks has no test coverage.
 
-### 21. Missing TypeScript Strict Mode
+### 21. ~~Missing TypeScript Strict Mode~~ ✅ VERIFIED
 `tsconfig.json` should enable strict mode for better type safety.
 
-### 22. No Rate Limiting on User Actions
+### 22. ~~No Rate Limiting on User Actions~~ ✅ FIXED
 Users can spam deposit/withdraw buttons.
 
-### 23. Inconsistent Error Messages
+### 23. ~~Inconsistent Error Messages~~ ✅ FIXED
 Some errors are technical (from contracts), others are user-friendly. Standardize.
 
 ### 24. No Transaction History Persistence
