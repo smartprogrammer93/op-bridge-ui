@@ -6,56 +6,18 @@ import { Button } from '@/components/ui/button';
 import { ExternalLink, Loader2, Clock, CheckCircle, AlertCircle } from 'lucide-react';
 import { l1Chain, l2Chain } from '@/config/chains';
 import { bridgeContracts } from '@/config/contracts';
+import { OPTIMISM_PORTAL_ABI, WITHDRAWAL_PROVEN_EVENT } from '@/config/abis';
+import { CHALLENGE_PERIOD_SECONDS, PROVE_EVENT_SEARCH_BLOCKS } from '@/config/constants';
 import { BridgeTransaction } from '@/hooks/useTransactions';
 import { useFinalizeWithdrawal } from '@/hooks/useFinalizeWithdrawal';
 import { useProveWithdrawal } from '@/hooks/useProveWithdrawal';
+import { withRetry, toBigIntSafe } from '@/lib/withdrawal-utils';
 
 interface WithdrawalItemProps {
   tx: BridgeTransaction;
 }
 
 type Status = 'loading' | 'waiting-for-output' | 'ready-to-prove' | 'proving' | 'proven' | 'ready-to-finalize' | 'finalizing' | 'finalized' | 'error';
-
-const CHALLENGE_PERIOD = 7 * 24 * 60 * 60; // 7 days
-
-// OptimismPortal2 (fault proofs) uses different signature
-const optimismPortalAbi = [
-  {
-    name: 'provenWithdrawals',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [
-      { name: '_withdrawalHash', type: 'bytes32' },
-      { name: '_proofSubmitter', type: 'address' },
-    ],
-    outputs: [{ name: '', type: 'bytes32' }], // Returns disputeGameProxy
-  },
-  {
-    name: 'finalizedWithdrawals',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: '', type: 'bytes32' }],
-    outputs: [{ name: '', type: 'bool' }],
-  },
-  {
-    name: 'numProofSubmitters',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: '_withdrawalHash', type: 'bytes32' }],
-    outputs: [{ name: '', type: 'uint256' }],
-  },
-] as const;
-
-// WithdrawalProven event for getting prove timestamp
-const withdrawalProvenEvent = {
-  type: 'event',
-  name: 'WithdrawalProven',
-  inputs: [
-    { name: 'withdrawalHash', type: 'bytes32', indexed: true },
-    { name: 'from', type: 'address', indexed: true },
-    { name: 'to', type: 'address', indexed: true },
-  ],
-} as const;
 
 export function WithdrawalItem({ tx }: WithdrawalItemProps) {
   const [status, setStatus] = useState<Status>('loading');
@@ -103,12 +65,14 @@ export function WithdrawalItem({ tx }: WithdrawalItemProps) {
         
         // Check if finalized
         try {
-          const finalized = await l1Client.readContract({
-            address: bridgeContracts.l1.optimismPortal,
-            abi: optimismPortalAbi,
-            functionName: 'finalizedWithdrawals',
-            args: [withdrawal.withdrawalHash],
-          });
+          const finalized = await withRetry(() =>
+            l1Client.readContract({
+              address: bridgeContracts.l1.optimismPortal,
+              abi: OPTIMISM_PORTAL_ABI,
+              functionName: 'finalizedWithdrawals',
+              args: [withdrawal.withdrawalHash],
+            })
+          );
           
           if (finalized) {
             setStatus('finalized');
@@ -120,51 +84,48 @@ export function WithdrawalItem({ tx }: WithdrawalItemProps) {
         
         // Check if proven (fault proof portal uses numProofSubmitters)
         try {
-          const numSubmitters = await l1Client.readContract({
-            address: bridgeContracts.l1.optimismPortal,
-            abi: optimismPortalAbi,
-            functionName: 'numProofSubmitters',
-            args: [withdrawal.withdrawalHash],
-          }) as bigint;
+          const numSubmitters = await withRetry(() =>
+            l1Client.readContract({
+              address: bridgeContracts.l1.optimismPortal,
+              abi: OPTIMISM_PORTAL_ABI,
+              functionName: 'numProofSubmitters',
+              args: [withdrawal.withdrawalHash],
+            })
+          );
           
-          if (numSubmitters > 0) {
+          if (toBigIntSafe(numSubmitters) > 0n) {
             // Get the actual prove timestamp from WithdrawalProven event
+            // Use indexed topic filter for efficiency (Issue #7 fix)
             try {
-              // Get current block to limit search range
               const currentBlock = await l1Client.getBlockNumber();
-              // Search last ~50000 blocks (~1 week on Sepolia)
-              const fromBlock = currentBlock > 50000n ? currentBlock - 50000n : 0n;
+              const fromBlock = currentBlock > BigInt(PROVE_EVENT_SEARCH_BLOCKS) 
+                ? currentBlock - BigInt(PROVE_EVENT_SEARCH_BLOCKS) 
+                : 0n;
               
-              // Query without args filter, then filter manually (more reliable)
-              const allLogs = await l1Client.getLogs({
-                address: bridgeContracts.l1.optimismPortal,
-                event: withdrawalProvenEvent,
-                fromBlock,
-                toBlock: 'latest',
-              });
-              
-              // Find the log for our withdrawal hash
-              const matchingLog = allLogs.find(log => 
-                log.args.withdrawalHash?.toLowerCase() === withdrawal.withdrawalHash.toLowerCase()
+              // Query with indexed withdrawalHash filter for efficiency
+              const logs = await withRetry(() =>
+                l1Client.getLogs({
+                  address: bridgeContracts.l1.optimismPortal,
+                  event: WITHDRAWAL_PROVEN_EVENT,
+                  args: {
+                    withdrawalHash: withdrawal.withdrawalHash,
+                  },
+                  fromBlock,
+                  toBlock: 'latest',
+                })
               );
               
-              if (matchingLog) {
-                // Get the block timestamp
-                const proveBlock = await l1Client.getBlock({ blockNumber: matchingLog.blockNumber });
-                console.log('Found prove event at block', matchingLog.blockNumber, 'timestamp', proveBlock.timestamp);
+              if (logs.length > 0) {
+                const proveBlock = await l1Client.getBlock({ blockNumber: logs[0].blockNumber });
                 setProvenTimestamp(Number(proveBlock.timestamp));
                 setStatus('proven');
                 return;
-              } else {
-                console.log('No matching prove event found for', withdrawal.withdrawalHash, 'in', allLogs.length, 'logs');
               }
-            } catch (e) {
-              console.error('Failed to get prove event:', e);
+            } catch {
+              // Fallback if event query fails
             }
             
             // Fallback: withdrawal is proven but we couldn't find timestamp
-            // Use current time (will show ~7 days)
-            console.log('Using fallback timestamp for proven withdrawal');
             setProvenTimestamp(Math.floor(Date.now() / 1000));
             setStatus('proven');
             return;
@@ -211,7 +172,7 @@ export function WithdrawalItem({ tx }: WithdrawalItemProps) {
     
     const updateTime = () => {
       const now = Math.floor(Date.now() / 1000);
-      const endTime = provenTimestamp + CHALLENGE_PERIOD;
+      const endTime = provenTimestamp + CHALLENGE_PERIOD_SECONDS;
       const remaining = endTime - now;
       
       if (remaining <= 0) {

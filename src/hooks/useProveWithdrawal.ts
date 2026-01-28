@@ -1,96 +1,23 @@
 import { usePublicClient, useWalletClient, useAccount } from 'wagmi';
 import { useState, useCallback } from 'react';
-import { Hash, decodeEventLog, parseAbi, createPublicClient, http, toHex, keccak256, encodeAbiParameters } from 'viem';
-import { getWithdrawals } from 'viem/op-stack';
+import { Hash, toHex, keccak256, encodeAbiParameters } from 'viem';
 import { l1Chain, l2Chain } from '@/config/chains';
 import { bridgeContracts } from '@/config/contracts';
+import { 
+  OPTIMISM_PORTAL_ABI, 
+  DISPUTE_GAME_FACTORY_ABI, 
+  FAULT_DISPUTE_GAME_ABI 
+} from '@/config/abis';
+import { DISPUTE_GAME_BATCH_SIZE } from '@/config/constants';
+import { 
+  WithdrawalTransaction, 
+  OutputRootProof,
+  getWithdrawalFromTx,
+  withRetry,
+  validateGameAtIndex,
+  toBigIntSafe,
+} from '@/lib/withdrawal-utils';
 import { sepolia } from 'viem/chains';
-
-// L2ToL1MessagePasser MessagePassed event
-const messagePassedAbi = parseAbi([
-  'event MessagePassed(uint256 indexed nonce, address indexed sender, address indexed target, uint256 value, uint256 gasLimit, bytes data, bytes32 withdrawalHash)'
-]);
-
-// DisputeGameFactory ABI
-const disputeGameFactoryAbi = parseAbi([
-  'function gameCount() view returns (uint256)',
-  'function gameAtIndex(uint256 _index) view returns (uint32 gameType, uint64 timestamp, address proxy)',
-  'function findLatestGames(uint32 _gameType, uint256 _start, uint256 _n) view returns ((uint256 index, bytes32 metadata, uint64 timestamp, bytes32 rootClaim, bytes extraData)[])',
-]);
-
-// FaultDisputeGame ABI
-const faultDisputeGameAbi = parseAbi([
-  'function l2BlockNumber() view returns (uint256)',
-  'function rootClaim() view returns (bytes32)',
-  'function status() view returns (uint8)',
-]);
-
-// OptimismPortal2 ABI for fault proofs
-const optimismPortal2Abi = [
-  {
-    name: 'proveWithdrawalTransaction',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [
-      {
-        name: '_tx',
-        type: 'tuple',
-        components: [
-          { name: 'nonce', type: 'uint256' },
-          { name: 'sender', type: 'address' },
-          { name: 'target', type: 'address' },
-          { name: 'value', type: 'uint256' },
-          { name: 'gasLimit', type: 'uint256' },
-          { name: 'data', type: 'bytes' },
-        ],
-      },
-      { name: '_disputeGameIndex', type: 'uint256' },
-      {
-        name: '_outputRootProof',
-        type: 'tuple',
-        components: [
-          { name: 'version', type: 'bytes32' },
-          { name: 'stateRoot', type: 'bytes32' },
-          { name: 'messagePasserStorageRoot', type: 'bytes32' },
-          { name: 'latestBlockhash', type: 'bytes32' },
-        ],
-      },
-      { name: '_withdrawalProof', type: 'bytes[]' },
-    ],
-    outputs: [],
-  },
-  {
-    name: 'disputeGameFactory',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [],
-    outputs: [{ name: '', type: 'address' }],
-  },
-  {
-    name: 'respectedGameType',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [],
-    outputs: [{ name: '', type: 'uint32' }],
-  },
-] as const;
-
-export interface WithdrawalTransaction {
-  nonce: bigint;
-  sender: `0x${string}`;
-  target: `0x${string}`;
-  value: bigint;
-  gasLimit: bigint;
-  data: `0x${string}`;
-  withdrawalHash: `0x${string}`;
-}
-
-export interface OutputRootProof {
-  version: `0x${string}`;
-  stateRoot: `0x${string}`;
-  messagePasserStorageRoot: `0x${string}`;
-  latestBlockhash: `0x${string}`;
-}
 
 export function useProveWithdrawal() {
   const l1Client = usePublicClient({ chainId: l1Chain.id });
@@ -104,46 +31,10 @@ export function useProveWithdrawal() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  // Get withdrawal from L2 tx
-  const getWithdrawalFromTx = useCallback(async (l2TxHash: Hash): Promise<{ withdrawal: WithdrawalTransaction; blockNumber: bigint } | null> => {
+  // Get withdrawal from L2 tx - uses shared utility
+  const getWithdrawalFromTxCallback = useCallback(async (l2TxHash: Hash) => {
     if (!l2Client) return null;
-    
-    try {
-      const receipt = await l2Client.getTransactionReceipt({ hash: l2TxHash });
-      
-      for (const log of receipt.logs) {
-        if (log.address.toLowerCase() === bridgeContracts.l2.l2ToL1MessagePasser.toLowerCase()) {
-          try {
-            const decoded = decodeEventLog({
-              abi: messagePassedAbi,
-              data: log.data,
-              topics: log.topics,
-            });
-            
-            if (decoded.eventName === 'MessagePassed') {
-              return {
-                withdrawal: {
-                  nonce: decoded.args.nonce,
-                  sender: decoded.args.sender,
-                  target: decoded.args.target,
-                  value: decoded.args.value,
-                  gasLimit: decoded.args.gasLimit,
-                  data: decoded.args.data as `0x${string}`,
-                  withdrawalHash: decoded.args.withdrawalHash,
-                },
-                blockNumber: receipt.blockNumber,
-              };
-            }
-          } catch {
-            continue;
-          }
-        }
-      }
-      return null;
-    } catch (err) {
-      console.error('Failed to get withdrawal:', err);
-      return null;
-    }
+    return getWithdrawalFromTx(l2Client, l2TxHash);
   }, [l2Client]);
 
   // Find a dispute game that covers the L2 block
@@ -152,61 +43,72 @@ export function useProveWithdrawal() {
     
     try {
       // Get the respected game type from OptimismPortal2
-      const gameType = await l1Client.readContract({
-        address: bridgeContracts.l1.optimismPortal,
-        abi: optimismPortal2Abi,
-        functionName: 'respectedGameType',
-      }) as number;
+      const gameType = await withRetry(() => 
+        l1Client.readContract({
+          address: bridgeContracts.l1.optimismPortal,
+          abi: OPTIMISM_PORTAL_ABI,
+          functionName: 'respectedGameType',
+        })
+      );
       
       // Get total game count
-      const gameCount = await l1Client.readContract({
-        address: bridgeContracts.l1.disputeGameFactory,
-        abi: disputeGameFactoryAbi,
-        functionName: 'gameCount',
-      }) as bigint;
+      const gameCount = await withRetry(() =>
+        l1Client.readContract({
+          address: bridgeContracts.l1.disputeGameFactory,
+          abi: DISPUTE_GAME_FACTORY_ABI,
+          functionName: 'gameCount',
+        })
+      );
       
-      if (gameCount === 0n) return null;
+      const gameCountBigInt = toBigIntSafe(gameCount);
+      if (gameCountBigInt === 0n) return null;
       
       // Search backwards from latest games to find one that covers our block
-      // Check last 100 games (should be enough)
-      const batchSize = 50;
-      const start = gameCount > BigInt(batchSize) ? gameCount - BigInt(batchSize) : 0n;
+      const batchSize = BigInt(DISPUTE_GAME_BATCH_SIZE);
+      const start = gameCountBigInt > batchSize ? gameCountBigInt - batchSize : 0n;
       
-      for (let i = gameCount - 1n; i >= start; i--) {
+      for (let i = gameCountBigInt - 1n; i >= start; i--) {
         try {
-          const [gType, timestamp, proxy] = await l1Client.readContract({
+          const rawResult = await l1Client.readContract({
             address: bridgeContracts.l1.disputeGameFactory,
-            abi: disputeGameFactoryAbi,
+            abi: DISPUTE_GAME_FACTORY_ABI,
             functionName: 'gameAtIndex',
             args: [i],
-          }) as [number, bigint, `0x${string}`];
+          });
+          
+          const validated = validateGameAtIndex(rawResult);
+          if (!validated) continue;
+          
+          const { gameType: gType, proxy } = validated;
           
           // Skip if wrong game type
-          if (gType !== gameType) continue;
+          if (gType !== Number(gameType)) continue;
           
           // Get the L2 block number this game covers
           const gameL2Block = await l1Client.readContract({
             address: proxy,
-            abi: faultDisputeGameAbi,
+            abi: FAULT_DISPUTE_GAME_ABI,
             functionName: 'l2BlockNumber',
-          }) as bigint;
+          });
+          
+          const gameL2BlockBigInt = toBigIntSafe(gameL2Block);
           
           // Check if this game covers our withdrawal block
-          if (gameL2Block >= l2BlockNumber) {
+          if (gameL2BlockBigInt >= l2BlockNumber) {
             // Check game status (0 = IN_PROGRESS, 1 = CHALLENGER_WINS, 2 = DEFENDER_WINS)
             const status = await l1Client.readContract({
               address: proxy,
-              abi: faultDisputeGameAbi,
+              abi: FAULT_DISPUTE_GAME_ABI,
               functionName: 'status',
-            }) as number;
+            });
             
             // Only use resolved games where defender won (status = 2)
             // For OP Sepolia testnet, we might need to allow IN_PROGRESS games
-            if (status === 2 || status === 0) {
-              return { gameIndex: i, gameProxy: proxy, l2Block: gameL2Block };
+            if (Number(status) === 2 || Number(status) === 0) {
+              return { gameIndex: i, gameProxy: proxy, l2Block: gameL2BlockBigInt };
             }
           }
-        } catch (e) {
+        } catch {
           // Skip games that fail to read
           continue;
         }
@@ -241,15 +143,17 @@ export function useProveWithdrawal() {
       )
     );
     
-    // Get the proof
-    const proof = await l2Client.request({
-      method: 'eth_getProof',
-      params: [
-        bridgeContracts.l2.l2ToL1MessagePasser,
-        [slot],
-        toHex(blockNumber),
-      ],
-    });
+    // Get the proof with retry
+    const proof = await withRetry(() =>
+      l2Client.request({
+        method: 'eth_getProof',
+        params: [
+          bridgeContracts.l2.l2ToL1MessagePasser,
+          [slot],
+          toHex(blockNumber),
+        ],
+      })
+    );
     
     return proof.storageProof[0].proof as `0x${string}`[];
   }, [l2Client]);
@@ -259,22 +163,26 @@ export function useProveWithdrawal() {
     if (!l2Client) throw new Error('No L2 client');
     
     // Get the block to construct the proof
-    const block = await l2Client.request({
-      method: 'eth_getBlockByNumber',
-      params: [toHex(l2BlockNumber), false],
-    });
+    const block = await withRetry(() =>
+      l2Client.request({
+        method: 'eth_getBlockByNumber',
+        params: [toHex(l2BlockNumber), false],
+      })
+    );
     
     if (!block) throw new Error('Could not fetch L2 block');
     
     // Get the L2ToL1MessagePasser storage root
-    const proof = await l2Client.request({
-      method: 'eth_getProof',
-      params: [
-        bridgeContracts.l2.l2ToL1MessagePasser,
-        [],
-        toHex(l2BlockNumber),
-      ],
-    });
+    const proof = await withRetry(() =>
+      l2Client.request({
+        method: 'eth_getProof',
+        params: [
+          bridgeContracts.l2.l2ToL1MessagePasser,
+          [],
+          toHex(l2BlockNumber),
+        ],
+      })
+    );
     
     if (!block.hash || !block.stateRoot) {
       throw new Error('Block missing required fields');
@@ -297,7 +205,7 @@ export function useProveWithdrawal() {
     setIsSuccess(false);
     
     try {
-      const result = await getWithdrawalFromTx(l2TxHash);
+      const result = await getWithdrawalFromTxCallback(l2TxHash);
       if (!result) throw new Error('Could not find withdrawal in transaction');
       
       const { withdrawal, blockNumber } = result;
@@ -317,7 +225,7 @@ export function useProveWithdrawal() {
       // Submit prove transaction
       const txHash = await walletClient.writeContract({
         address: bridgeContracts.l1.optimismPortal,
-        abi: optimismPortal2Abi,
+        abi: OPTIMISM_PORTAL_ABI,
         functionName: 'proveWithdrawalTransaction',
         args: [
           {
@@ -354,11 +262,11 @@ export function useProveWithdrawal() {
       setError(err instanceof Error ? err : new Error('Unknown error'));
       throw err;
     }
-  }, [walletClient, address, l1Client, getWithdrawalFromTx, findDisputeGame, getOutputRootProof, getStorageProof]);
+  }, [walletClient, address, l1Client, getWithdrawalFromTxCallback, findDisputeGame, getOutputRootProof, getStorageProof]);
 
   return {
     prove,
-    getWithdrawalFromTx,
+    getWithdrawalFromTx: getWithdrawalFromTxCallback,
     canProve,
     hash,
     isPending,
